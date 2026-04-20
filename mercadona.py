@@ -21,6 +21,10 @@ DEFAULT_HEADERS = {
     "x-version": "v8451",
 }
 
+# Algolia search constants
+ALGOLIA_APP_ID = "7UZJKL1DJ0"
+ALGOLIA_API_KEY = "9d8f2e39e90df472b4f2e559a116fe17"
+
 
 # ---------------------------------------------------------------------------
 # Config helpers
@@ -348,6 +352,75 @@ def products_similar(product_id: str, as_json: bool):
     results = data if isinstance(data, list) else data.get("results", [data])
     for p in results:
         click.echo(f"  [{p.get('id')}] {p.get('display_name') or p.get('name')}  —  {fmt_price(p.get('price_instructions'))}")
+
+
+def algolia_search(query: str, config: dict) -> dict:
+    """Search products using Algolia."""
+    wh = config.get("warehouse") or "mad2"
+    # The index name format appears to be products_prod_<warehouse>_es
+    index_name = f"products_prod_{wh}_es"
+    url = f"https://{ALGOLIA_APP_ID}-dsn.algolia.net/1/indexes/{index_name}/query"
+    
+    params = {
+        "x-algolia-agent": "Algolia for JavaScript (5.50.2); Search (5.50.2); Browser",
+        "x-algolia-api-key": ALGOLIA_API_KEY,
+        "x-algolia-application-id": ALGOLIA_APP_ID,
+    }
+    
+    headers = {
+        "Origin": "https://tienda.mercadona.es",
+        "Referer": "https://tienda.mercadona.es/",
+        "Accept-Language": "es-ES,es;q=0.9",
+    }
+    
+    user_token = get_customer_uuid(config) or "052bdd3c-0358-4b15-a2ed-949bd02307bd"
+    
+    payload = {
+        "query": query,
+        "clickAnalytics": True,
+        "analyticsTags": ["web"],
+        "userToken": user_token,
+        "getRankingInfo": True,
+        "analytics": True
+    }
+    
+    resp = requests.post(url, params=params, json=payload, headers=headers, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
+@products.command("search-algolia")
+@click.argument("query")
+@click.option("--json", "as_json", is_flag=True, help="Output raw JSON")
+def products_search_algolia(query: str, as_json: bool):
+    """Search products using Algolia (fast)."""
+    config = load_config()
+    try:
+        data = algolia_search(query, config)
+    except requests.RequestException as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+
+    hits = data.get("hits", [])
+    if not hits:
+        click.echo(f"No products found for '{query}'.")
+        return
+
+    if as_json:
+        print_json(hits)
+        return
+
+    click.echo(f"\n{len(hits)} result(s) for '{query}':")
+    for h in hits:
+        # Algolia hit structure might differ slightly from API product structure
+        pid = h.get("id") or h.get("objectID")
+        name = h.get("display_name") or h.get("name")
+        brand = h.get("brand")
+        price_instr = h.get("price_instructions", {})
+        price_str = fmt_price(price_instr)
+        
+        brand_str = f" ({brand})" if brand else ""
+        click.echo(f"  [{pid}] {name}{brand_str}  —  {price_str}")
 
 
 @products.command("search")
