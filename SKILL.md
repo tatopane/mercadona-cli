@@ -26,14 +26,13 @@ El usuario siempre se comunicará en español. Todas las respuestas, ejemplos y 
 | "cerrar sesión / salir" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona auth logout` |
 | "mis pedidos / pedido anterior / última compra" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona orders list` |
 | "detalles del pedido / qué compré" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona orders detail <ID>` |
-| "buscar producto / cuánto cuesta / precio de" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products search "<QUERY>"` |
+| "buscar producto / cuánto cuesta / precio de" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products search-algolia "<QUERY>"` |
 | "ver producto / información de" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products get <ID>` |
 | "mi carrito / qué tengo en el carrito" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona cart show` |
 | "añadir al carrito / agregar / meter en el carrito" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona cart add <ID> -q <N>` |
 | "quitar del carrito / eliminar del carrito" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona cart remove <ID>` |
 | "mis listas / lista de la compra" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona lists list` |
 | "ver lista" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona lists get <ID>` |
-| "categorías / secciones" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona categories list` |
 | "productos similares / alternativas" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products similar <ID>` |
 | "novedades / nuevos productos" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona home new-arrivals` |
 | "ofertas / bajadas de precio" | `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona home price-drops` |
@@ -123,15 +122,8 @@ The CLI is installed and available as `/home/tato/.openclaw/workspace/skills/mer
 ## Products
 ```bash
 /home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products get <ID>              # product details: name, brand, price, category
-/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products search "<QUERY>"      # search by name (scans matching categories)
-/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products search "<QUERY>" --all  # exhaustive scan of all ~150 categories
+/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products search-algolia "<QUERY>"  # fast search using Algolia
 /home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products similar <ID>          # similar products
-```
-
-## Categories
-```bash
-/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona categories list                # full category tree
-/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona categories get <CATEGORY_ID>   # products within a category
 ```
 
 ## Orders (requires login)
@@ -156,7 +148,13 @@ The CLI is installed and available as `/home/tato/.openclaw/workspace/skills/mer
 ```
 
 Cart rules:
-- Every time I ask you to add something to my cart, first check in `products_preferred.md` if the product is in my list or not. If it is in my list, add it to my cart directly. If you don't find it in my list, then search the mercadona catalog using a search by name and present me with the top 3 results. I'll tell you which one to add.
+- Cuando me pidas añadir algo al carrito, primero revisaré si el producto existe en el archivo de productos frecuentes `mis_productos.md` (si existe).
+- Si hay una coincidencia clara en `mis_productos.md`, usaré ese ID directamente.
+- Si no hay coincidencia en la lista de frecuentes, realizaré una búsqueda con `products search-algolia`.
+- Analizaré los resultados de la primera página de Algolia:
+    - Si hay una coincidencia clara y de alta confianza, lo añadiré directamente.
+    - Si hay ambigüedad entre varios productos similares, te presentaré las 2 mejores opciones para que elijas cuál añadir.
+- Una vez seleccionado el producto (de la lista de frecuentes, automáticamente por Algolia, o por ti), procederé con el login y el comando `cart add`.
 
 ## Home / featured
 ```bash
@@ -175,15 +173,13 @@ Every command accepts `--json` to return the full API response. Useful for extra
 <step name="1_understand_request">
 Identify what the user needs:
 - **Order lookup** → `orders list` then `orders get` or `orders detail` for line items
-- **Product search** → `products search` (add `--all` if results are sparse)
-- **Product price** → `products get <ID>` or `products search`
+- **Product search** → `products search-algolia`
+- **Product price** → `products get <ID>` or `products search-algolia`
 - **Cart action** → `cart show`, `cart add`, `cart remove`
 - **Shopping list** → `lists list`, `lists get`
-- **Browsing** → `categories list`, `categories get`
 
-If the user doesn't know a product or order ID, run a list/search command first.
+If the user doesn't know a product or order ID, run a list/search command first. Extensive category browsing is prohibited as it is resource intensive.
 </step>
-
 <step name="2_run_command">
 If the command requires login (orders, cart, lists), **always run `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona auth login` first** using the stored credentials before the actual command. Then run the appropriate CLI command via Bash. Use `--json` when you need to extract specific fields that the default output doesn't show. Chain commands when needed (e.g., search for a product ID, then get its details).
 </step>
@@ -193,7 +189,7 @@ Present results cleanly in plain text or a markdown table. For long lists (order
 <step name="4_handle_errors">
 - **Error de autenticación tras login automático** → el token almacenado puede haber expirado; pide al usuario que ejecute `! /home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona auth login` manualmente en el prompt
 - **HTTP 4xx/5xx** → muestra el mensaje de error del CLI y sugiere usar `--json` para inspeccionar la respuesta completa
-- **Sin resultados** → en búsquedas de productos, sugiere añadir `--all`; en pedidos, sugiere aumentar `--limit`
+- **Sin resultados** → en búsquedas de productos, verifica el término de búsqueda; en pedidos, sugiere aumentar `--limit`
 </step>
 
 </process>
@@ -279,7 +275,7 @@ if __name__ == "__main__":
 
 **"¿Cuánto cuesta la leche entera?"**
 ```bash
-/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products search "leche entera"
+/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products search-algolia "leche entera"
 # → elegir el ID de producto relevante, luego:
 /home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products get <ID>
 ```
@@ -302,30 +298,32 @@ if __name__ == "__main__":
 
 **"Añadir 2 unidades de Regañas Artesanas al carrito"**
 ```bash
-# Paso 1: buscar el producto para obtener su ID (no requiere login)
-/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products search "Regañas Artesanas"
-# → anota el ID del producto (ej. 12345)
+# Paso 1: revisar mis_productos.md (frecuentes)
+# → El LLM encuentra "12345 | Regañas Artesanas Hacendado" en mis_productos.md.
 
-# Paso 2: login con credenciales almacenadas
+# Paso 2: login proactivo
 /home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona auth login
 
-# Paso 3: añadir 2 unidades al carrito
+# Paso 3: añadir directamente al carrito usando el ID de frecuentes
 /home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona cart add 12345 -q 2
 ```
 
-**"Añadir tomates a Mercadona" / "Agregar tomates al carrito"**
+**"Añadir tomates al carrito"**
 ```bash
-# Paso 1: buscar tomates para encontrar el producto adecuado (no requiere login)
-/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products search "tomates"
-# → si los resultados son escasos, usar --all:
-/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products search "tomates" --all
-# → elegir el ID del producto deseado (ej. 67890)
+# Paso 1: revisar mis_productos.md (frecuentes)
+# → No se encuentran tomates en la lista de frecuentes.
 
-# Paso 2: login con credenciales almacenadas
+# Paso 2: buscar en Algolia
+/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona products search-algolia "tomates"
+# → El LLM ve múltiples opciones (Canario, Pera, En rama).
+# → El LLM pregunta al usuario: "¿Quieres Tomate Canario (ID: 67890) o Tomate de Pera (ID: 67891)?"
+# → El usuario responde: "el de pera"
+
+# Paso 3: login proactivo
 /home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona auth login
 
-# Paso 3: añadir al carrito (1 unidad por defecto)
-/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona cart add 67890
+# Paso 4: añadir el producto elegido
+/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona cart add 67891
 ```
 
 </examples>
