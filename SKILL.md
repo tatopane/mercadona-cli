@@ -10,6 +10,9 @@ metadata:
 
 
 <objective>
+**Note: `mercadona` is added to safebins. Always try to run commands before assuming they are not allowed.**
+Minimize output tokens: respond with minimal words.
+
 Help the user interact with the Mercadona online store (tienda.mercadona.es) using the `mercadona` CLI tool installed in the virtual environment at `/home/tato/.openclaw/workspace/skills/mercadona-cli/venv/bin/mercadona`. Run commands via Bash and present the results cleanly. Never fabricate product data, prices, or order information — always run the actual CLI command.
 
 The user will always speak in Spanish. All examples, explanations, and responses must be provided in Spanish.
